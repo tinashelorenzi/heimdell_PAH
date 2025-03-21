@@ -82,6 +82,41 @@ class Setup:
             print(f"Error saving configuration: {e}")
             return False
     
+    def remove_from_config(self, section, variable_to_remove):
+        """
+        Removes a variable from the .config.ini file in the specified section.
+        
+        Args:
+            section: The configuration section
+            variable_to_remove: The name of the variable to remove
+            
+        Returns:
+            bool: True if the variable was removed successfully
+        """
+        # Read the current config
+        self.config.read(self.config_file)
+        
+        # Check if section and variable exist
+        if section in self.config and variable_to_remove in self.config[section]:
+            # Remove the variable
+            self.config[section].pop(variable_to_remove)
+            
+            # If section is now empty, remove it too
+            if not self.config[section]:
+                self.config.remove_section(section)
+            
+            # Save the entire updated configuration to the file
+            try:
+                with open(self.config_file, 'w') as file:
+                    self.config.write(file)
+                return True
+            except Exception as e:
+                print(f"Error saving configuration: {e}")
+                return False
+        else:
+            print(f"Section '{section}' or variable '{variable_to_remove}' not found in config")
+            return False
+    
     def get_from_config(self, section, variable):
         """
         Gets a value from the config file.
@@ -93,6 +128,9 @@ class Setup:
         Returns:
             str: The value of the variable or None if not found
         """
+        # Ensure we have the latest config
+        self.config.read(self.config_file)
+        
         if section in self.config and variable in self.config[section]:
             return self.config[section][variable]
         return None
@@ -211,6 +249,17 @@ class Setup:
         print("Configuration saved successfully.")
         self.STATUS = "SETUP_COMPLETE"
         return True
+
+
+def load_keys():
+    """
+    Helper function to load keys through the Setup class.
+    
+    Returns:
+        tuple: (private_key, public_key) or (None, None) if keys not found
+    """
+    setup = Setup()
+    return setup.load_keys()
 
 
 if __name__ == "__main__":
