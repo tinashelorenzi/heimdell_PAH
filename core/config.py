@@ -63,24 +63,19 @@ class Setup:
         Returns:
             bool: True if the variable was added successfully
         """
-        #Get all the sections in the config file
-        file = open(self.config_file, 'r')
-        self.config.read(file)
-        sections_in_file = []
-        for line in file:
-            if line.startswith('[') and line.endswith(']'):
-                sections_in_file.append(line.strip('[]'))
-        file.close()
+        # Read the current config
+        self.config.read(self.config_file)
+        
         # Create the section if it doesn't exist
-        if section not in sections_in_file:
+        if section not in self.config:
             self.config[section] = {}
         
         # Add or update the variable in the section
         self.config[section][variable_to_save] = value_to_save
         
-        # Save the updated configuration to the file
+        # Save the entire updated configuration to the file
         try:
-            with open(self.config_file, 'a') as file:
+            with open(self.config_file, 'w') as file:  # Use 'w' to overwrite the file
                 self.config.write(file)
             return True
         except Exception as e:
