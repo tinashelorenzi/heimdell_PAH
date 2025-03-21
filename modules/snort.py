@@ -37,24 +37,80 @@ class SnortModule:
         
         # Set default paths
         self.system = platform.system()
-        if self.system == "Linux":
-            self.snort_bin = self.config.get('snort_bin', '/usr/sbin/snort')
-            self.snort_conf = self.config.get('snort_conf', '/etc/snort/snort.conf')
-            self.snort_rules_dir = self.config.get('snort_rules_dir', '/etc/snort/rules')
-            self.snort_log_dir = self.config.get('snort_log_dir', '/var/log/snort')
-            self.alert_file = self.config.get('alert_file', '/var/log/snort/alert')
-        elif self.system == "Darwin":  # macOS
-            self.snort_bin = self.config.get('snort_bin', '/usr/local/bin/snort')
-            self.snort_conf = self.config.get('snort_conf', '/usr/local/etc/snort/snort.conf')
-            self.snort_rules_dir = self.config.get('snort_rules_dir', '/usr/local/etc/snort/rules')
-            self.snort_log_dir = self.config.get('snort_log_dir', '/usr/local/var/log/snort')
-            self.alert_file = self.config.get('alert_file', '/usr/local/var/log/snort/alert')
-        else:  # Windows or other
-            self.snort_bin = self.config.get('snort_bin', 'C:\\Snort\\bin\\snort.exe')
-            self.snort_conf = self.config.get('snort_conf', 'C:\\Snort\\etc\\snort.conf')
-            self.snort_rules_dir = self.config.get('snort_rules_dir', 'C:\\Snort\\rules')
-            self.snort_log_dir = self.config.get('snort_log_dir', 'C:\\Snort\\log')
-            self.alert_file = self.config.get('alert_file', 'C:\\Snort\\log\\alert')
+        
+        # Try to find Snort installation by running 'which snort'
+        self.snort_bin = self._find_snort_bin()
+        print(f"Snort binary found at: {self.snort_bin}")
+        
+        # Auto-detect Snort paths based on the detected binary
+        if self.snort_bin and os.path.exists(self.snort_bin):
+            if self.system == "Linux":
+                # Try to find the actual config file location
+                self.snort_conf = self._find_snort_conf()
+                # Set other paths based on common locations
+                if "/usr/sbin/snort" in self.snort_bin:
+                    # Debian/Ubuntu standard locations
+                    self.snort_rules_dir = "/etc/snort/rules"
+                    self.snort_log_dir = "/var/log/snort"
+                    self.alert_file = "/var/log/snort/alert"
+                elif "/usr/local/bin/snort" in self.snort_bin:
+                    # Compiled from source or Homebrew typical locations
+                    self.snort_rules_dir = "/usr/local/etc/snort/rules"
+                    self.snort_log_dir = "/usr/local/var/log/snort"
+                    self.alert_file = "/usr/local/var/log/snort/alert"
+                else:
+                    # Default fallback
+                    self.snort_rules_dir = "/etc/snort/rules"
+                    self.snort_log_dir = "/var/log/snort"
+                    self.alert_file = "/var/log/snort/alert"
+            elif self.system == "Darwin":  # macOS
+                self.snort_conf = "/usr/local/etc/snort/snort.conf"
+                self.snort_rules_dir = "/usr/local/etc/snort/rules"
+                self.snort_log_dir = "/usr/local/var/log/snort"
+                self.alert_file = "/usr/local/var/log/snort/alert"
+            else:  # Windows or other
+                self.snort_conf = "C:\\Snort\\etc\\snort.conf"
+                self.snort_rules_dir = "C:\\Snort\\rules"
+                self.snort_log_dir = "C:\\Snort\\log"
+                self.alert_file = "C:\\Snort\\log\\alert"
+        else:
+            # Default paths if Snort is not found
+            if self.system == "Linux":
+                self.snort_bin = "/usr/sbin/snort"
+                self.snort_conf = "/etc/snort/snort.conf"
+                self.snort_rules_dir = "/etc/snort/rules"
+                self.snort_log_dir = "/var/log/snort"
+                self.alert_file = "/var/log/snort/alert"
+            elif self.system == "Darwin":  # macOS
+                self.snort_bin = "/usr/local/bin/snort"
+                self.snort_conf = "/usr/local/etc/snort/snort.conf"
+                self.snort_rules_dir = "/usr/local/etc/snort/rules"
+                self.snort_log_dir = "/usr/local/var/log/snort"
+                self.alert_file = "/usr/local/var/log/snort/alert"
+            else:  # Windows or other
+                self.snort_bin = "C:\\Snort\\bin\\snort.exe"
+                self.snort_conf = "C:\\Snort\\etc\\snort.conf"
+                self.snort_rules_dir = "C:\\Snort\\rules"
+                self.snort_log_dir = "C:\\Snort\\log"
+                self.alert_file = "C:\\Snort\\log\\alert"
+        
+        # Override paths with any provided in config
+        if 'snort_bin' in self.config:
+            self.snort_bin = self.config['snort_bin']
+        if 'snort_conf' in self.config:
+            self.snort_conf = self.config['snort_conf']
+        if 'snort_rules_dir' in self.config:
+            self.snort_rules_dir = self.config['snort_rules_dir']
+        if 'snort_log_dir' in self.config:
+            self.snort_log_dir = self.config['snort_log_dir']
+        if 'alert_file' in self.config:
+            self.alert_file = self.config['alert_file']
+            
+        # Print detected paths for debugging
+        print(f"Snort configuration file: {self.snort_conf}")
+        print(f"Snort rules directory: {self.snort_rules_dir}")
+        print(f"Snort log directory: {self.snort_log_dir}")
+        print(f"Snort alert file: {self.alert_file}")
         
         # Tracking for alert file reading
         self.position_file = self.config.get('position_file', '.snort_position')
@@ -115,6 +171,76 @@ class SnortModule:
         
         # Load last position for alert reading
         self._load_position()
+    
+    def _find_snort_bin(self):
+        """
+        Find the Snort binary location using 'which' or 'where' command.
+        
+        Returns:
+            str: Path to Snort binary or default path if not found
+        """
+        try:
+            if self.system in ["Linux", "Darwin"]:
+                result = subprocess.run(["which", "snort"], 
+                                       stdout=subprocess.PIPE, 
+                                       stderr=subprocess.PIPE,
+                                       text=True)
+                if result.returncode == 0:
+                    return result.stdout.strip()
+            elif self.system == "Windows":
+                result = subprocess.run(["where", "snort"], 
+                                       stdout=subprocess.PIPE, 
+                                       stderr=subprocess.PIPE,
+                                       text=True)
+                if result.returncode == 0:
+                    return result.stdout.strip()
+        except Exception:
+            pass
+            
+        # Return default paths if not found
+        if self.system == "Linux":
+            return "/usr/sbin/snort"
+        elif self.system == "Darwin":
+            return "/usr/local/bin/snort"
+        else:
+            return "C:\\Snort\\bin\\snort.exe"
+    
+    def _find_snort_conf(self):
+        """
+        Find the Snort configuration file location by checking common paths
+        and using snort -V to get information.
+        
+        Returns:
+            str: Path to Snort config file or default path if not found
+        """
+        # Common config file locations
+        common_paths = [
+            "/etc/snort/snort.conf",
+            "/usr/local/etc/snort/snort.conf",
+            "/opt/snort/etc/snort.conf"
+        ]
+        
+        # Check common paths
+        for path in common_paths:
+            if os.path.exists(path):
+                return path
+        
+        # Try to get path from snort -V output
+        try:
+            result = subprocess.run([self.snort_bin, "-V"], 
+                                   stdout=subprocess.PIPE, 
+                                   stderr=subprocess.PIPE,
+                                   text=True)
+            if result.returncode == 0:
+                # Look for path information in the output
+                match = re.search(r'using config file: ([^\s]+)', result.stdout, re.IGNORECASE)
+                if match:
+                    return match.group(1)
+        except Exception:
+            pass
+            
+        # Default to the most common location
+        return "/etc/snort/snort.conf"
 
     def run(self):
         """
@@ -137,6 +263,9 @@ class SnortModule:
                     return
             else:
                 print("Skipping Snort installation. Some features may not work.")
+        
+        # Initialize log directories if they don't exist
+        self._ensure_log_directories()
         
         # Main module menu
         while True:
@@ -166,6 +295,39 @@ class SnortModule:
                 
             else:
                 print("Invalid option. Please try again.")
+    
+    def _ensure_log_directories(self):
+        """Ensure log directories exist for Snort."""
+        try:
+            # Create log directory if it doesn't exist
+            if not os.path.exists(self.snort_log_dir):
+                print(f"Creating log directory: {self.snort_log_dir}")
+                os.makedirs(self.snort_log_dir, exist_ok=True)
+                
+                # Set permissions on Unix-like systems
+                if self.system != "Windows":
+                    try:
+                        # Try to set appropriate permissions
+                        subprocess.run(["sudo", "chmod", "775", self.snort_log_dir], check=False)
+                    except Exception:
+                        pass
+            
+            # Create the alert file if it doesn't exist
+            if not os.path.exists(self.alert_file):
+                print(f"Creating empty alert file: {self.alert_file}")
+                try:
+                    with open(self.alert_file, 'w') as f:
+                        f.write("# Snort alert file initialized by Heimdell\n")
+                except PermissionError:
+                    # Try with sudo if permission denied
+                    if self.system != "Windows":
+                        try:
+                            subprocess.run(["sudo", "touch", self.alert_file], check=False)
+                            subprocess.run(["sudo", "chmod", "664", self.alert_file], check=False)
+                        except Exception as e:
+                            print(f"Error creating alert file: {e}")
+        except Exception as e:
+            print(f"Error ensuring log directories: {e}")
 
     def _print_module_menu(self):
         """Display the main Snort module menu."""
@@ -195,9 +357,10 @@ class SnortModule:
         print(f"Snort Version: {health['version']}")
         
         # Files and directories
-        print(f"Config File: {'Found' if health['config_file_exists'] else 'Missing'}")
-        print(f"Rules Directory: {'Found' if health['rules_directory_exists'] else 'Missing'}")
-        print(f"Log Directory: {'Found' if health['log_directory_exists'] else 'Missing'}")
+        print(f"Config File: {'Found' if health['config_file_exists'] else 'Missing'} - {self.snort_conf}")
+        print(f"Rules Directory: {'Found' if health['rules_directory_exists'] else 'Missing'} - {self.snort_rules_dir}")
+        print(f"Log Directory: {'Found' if health['log_directory_exists'] else 'Missing'} - {self.snort_log_dir}")
+        print(f"Alert File: {'Found' if health['alert_file_exists'] else 'Missing'} - {self.alert_file}")
         
         # Configuration status
         if health.get('config_valid') is not None:
@@ -252,7 +415,6 @@ class SnortModule:
         """
         # Check if snort binary exists
         if os.path.exists(self.snort_bin):
-            print(f"Snort found installed at: {self.snort_bin}")
             try:
                 # Try to run snort -V to check version
                 result = subprocess.run([self.snort_bin, '-V'], 
@@ -260,9 +422,7 @@ class SnortModule:
                                        stderr=subprocess.PIPE,
                                        text=True,
                                        timeout=5)
-                print("Snort version:", result.stdout.strip())
-                if result.returncode == 0 and "Snort" in result.stdout:
-                    return True
+                return result.returncode == 0
             except (subprocess.SubprocessError, FileNotFoundError):
                 pass
         return False
@@ -415,12 +575,10 @@ class SnortModule:
                     # Set permissions on Unix-like systems
                     if self.system != "Windows":
                         try:
-                            import pwd, grp
-                            snort_user = pwd.getpwnam("snort").pw_uid
-                            snort_group = grp.getgrnam("snort").gr_gid
-                            os.chown(directory, snort_user, snort_group)
-                        except (KeyError, PermissionError, ImportError):
-                            print("Could not set directory ownership to snort user.")
+                            # Try with sudo to ensure proper permissions
+                            subprocess.run(["sudo", "chmod", "775", directory], check=False)
+                        except Exception:
+                            print(f"Warning: Could not set permissions on {directory}")
             
             return True
             
@@ -443,6 +601,7 @@ class SnortModule:
             "config_file_exists": os.path.exists(self.snort_conf),
             "rules_directory_exists": os.path.exists(self.snort_rules_dir),
             "log_directory_exists": os.path.exists(self.snort_log_dir),
+            "alert_file_exists": os.path.exists(self.alert_file),
             "rules_count": self._count_rules(),
             "is_running": self._is_snort_running(),
             "errors": []
@@ -460,7 +619,16 @@ class SnortModule:
         if not health["log_directory_exists"]:
             health["errors"].append(f"Log directory not found: {self.snort_log_dir}")
         
-        # Verify config file syntax
+        # Check alert file or parent directory
+        if not health["alert_file_exists"]:
+            # Check if parent directory exists and is writable
+            parent_dir = os.path.dirname(self.alert_file)
+            if not os.path.exists(parent_dir):
+                health["errors"].append(f"Alert file parent directory not found: {parent_dir}")
+            elif not os.access(parent_dir, os.W_OK):
+                health["errors"].append(f"Alert file parent directory not writable: {parent_dir}")
+        
+        # Verify config file syntax if it exists
         if health["config_file_exists"]:
             config_valid, config_error = self._verify_config()
             health["config_valid"] = config_valid
@@ -487,10 +655,11 @@ class SnortModule:
                                    timeout=5)
             if result.returncode == 0:
                 # Extract version from output
-                match = re.search(r'Snort (\d+\.\d+\.\d+(\.\d+)?)', result.stdout)
+                match = re.search(r'Version (\d+\.\d+\.\d+(\.\d+)?)', result.stdout)
                 if match:
                     return match.group(1)
-                return result.stdout.strip()
+                return result.stdout.split('\n')[1].strip() if len(result.stdout.split('\n')) > 1 else result.stdout.strip()
+            return "Error getting version"
         except (subprocess.SubprocessError, FileNotFoundError):
             pass
         return "Unknown"
@@ -671,22 +840,49 @@ class SnortModule:
                 print("Try again or type 'help' for more information.")
                 continue
                 
+            # Ensure rules directory exists
+            if not os.path.exists(self.snort_rules_dir):
+                try:
+                    print(f"Creating rules directory: {self.snort_rules_dir}")
+                    os.makedirs(self.snort_rules_dir, exist_ok=True)
+                    if self.system != "Windows":
+                        try:
+                            subprocess.run(["sudo", "chmod", "775", self.snort_rules_dir], check=False)
+                        except Exception:
+                            pass
+                except Exception as e:
+                    print(f"Error creating rules directory: {e}")
+                    return
+                
             # Ensure custom rules file exists
             custom_rules_file = os.path.join(self.snort_rules_dir, 'custom.rules')
-            os.makedirs(os.path.dirname(custom_rules_file), exist_ok=True)
             
             # Write the rule
             try:
-                with open(custom_rules_file, 'a+') as f:
-                    # Add newline if file isn't empty and doesn't end with one
-                    f.seek(0, os.SEEK_END)
-                    if f.tell() > 0:
-                        f.seek(f.tell() - 1, os.SEEK_SET)
-                        if f.read(1) != '\n':
-                            f.write('\n')
-                    
-                    f.write(rule + '\n')
-                    
+                # Try normal write first
+                try:
+                    with open(custom_rules_file, 'a+') as f:
+                        # Add newline if file isn't empty and doesn't end with one
+                        f.seek(0, os.SEEK_END)
+                        if f.tell() > 0:
+                            f.seek(f.tell() - 1, os.SEEK_SET)
+                            if f.read(1) != '\n':
+                                f.write('\n')
+                        
+                        f.write(rule + '\n')
+                except PermissionError:
+                    # If permission denied, try with sudo on Unix-like systems
+                    if self.system != "Windows":
+                        print("Permission denied. Trying with sudo...")
+                        temp_file = "/tmp/heimdell_custom_rule.tmp"
+                        with open(temp_file, 'w') as f:
+                            f.write(rule + '\n')
+                        
+                        subprocess.run(["sudo", "bash", "-c", f"cat {temp_file} >> {custom_rules_file}"], check=True)
+                        os.remove(temp_file)
+                    else:
+                        raise
+                
                 # Enable custom rules category
                 self.rule_templates['custom']['enabled'] = True
                 
@@ -745,10 +941,23 @@ class SnortModule:
         print("           VIEW AND REMOVE RULES")
         print("=" * 50)
         
+        # Ensure rules directory exists
+        if not os.path.exists(self.snort_rules_dir):
+            print(f"\nRules directory not found: {self.snort_rules_dir}")
+            create_dir = input("Heimdell(Create rules directory? [y/n]) #> ").strip().lower()
+            if create_dir == 'y':
+                try:
+                    os.makedirs(self.snort_rules_dir, exist_ok=True)
+                    print(f"Created directory: {self.snort_rules_dir}")
+                except Exception as e:
+                    print(f"Error creating directory: {e}")
+                    return
+            else:
+                return
+        
         # Get all rule files
         rule_files = []
-        if os.path.exists(self.snort_rules_dir):
-            rule_files = [f for f in os.listdir(self.snort_rules_dir) if f.endswith('.rules')]
+        rule_files = [f for f in os.listdir(self.snort_rules_dir) if f.endswith('.rules')]
         
         if not rule_files:
             print("\nNo rule files found in rules directory.")
@@ -858,10 +1067,29 @@ class SnortModule:
                         if 0 <= rule_idx < len(rules):
                             # Find and remove the rule from the original file
                             rule_to_remove = rules[rule_idx]
-                            with open(file_path, 'w') as f:
-                                for line in lines:
-                                    if line.strip() != rule_to_remove:
-                                        f.write(line)
+                            
+                            try:
+                                # Try normal write first
+                                with open(file_path, 'w') as f:
+                                    for line in lines:
+                                        if line.strip() != rule_to_remove:
+                                            f.write(line)
+                            except PermissionError:
+                                # If permission denied, try with sudo on Unix-like systems
+                                if self.system != "Windows":
+                                    print("Permission denied. Trying with sudo...")
+                                    # Create a temporary file with the filtered content
+                                    temp_file = "/tmp/heimdell_filtered_rules.tmp"
+                                    with open(temp_file, 'w') as f:
+                                        for line in lines:
+                                            if line.strip() != rule_to_remove:
+                                                f.write(line)
+                                    
+                                    # Use sudo to copy the temp file to the original location
+                                    subprocess.run(["sudo", "cp", temp_file, file_path], check=True)
+                                    os.remove(temp_file)
+                                else:
+                                    raise
                             
                             print(f"\n✓ Rule removed successfully.")
                             
@@ -871,6 +1099,8 @@ class SnortModule:
                             print("Invalid rule number.")
                     except ValueError:
                         print("Please enter a valid number.")
+                    except Exception as e:
+                        print(f"Error removing rule: {e}")
                 else:
                     print("Invalid command.")
         except Exception as e:
@@ -940,8 +1170,23 @@ class SnortModule:
                         
                         # Write to the rules directory
                         output_path = os.path.join(self.snort_rules_dir, os.path.basename(rule_file))
-                        with open(output_path, 'wb') as out_file:
-                            out_file.write(content)
+                        
+                        try:
+                            # Try normal write first
+                            with open(output_path, 'wb') as out_file:
+                                out_file.write(content)
+                        except PermissionError:
+                            # If permission denied, try with sudo on Unix-like systems
+                            if self.system != "Windows":
+                                print(f"Permission denied for {output_path}. Trying with sudo...")
+                                temp_rule_file = f"/tmp/heimdell_rule_{os.path.basename(rule_file)}"
+                                with open(temp_rule_file, 'wb') as out_file:
+                                    out_file.write(content)
+                                
+                                subprocess.run(["sudo", "cp", temp_rule_file, output_path], check=True)
+                                os.remove(temp_rule_file)
+                            else:
+                                raise
                             
                         print(f"Extracted: {os.path.basename(rule_file)}")
             
@@ -1017,8 +1262,23 @@ class SnortModule:
                         
                         # Write to the rules directory
                         output_path = os.path.join(self.snort_rules_dir, os.path.basename(rule_file))
-                        with open(output_path, 'wb') as out_file:
-                            out_file.write(content)
+                        
+                        try:
+                            # Try normal write first
+                            with open(output_path, 'wb') as out_file:
+                                out_file.write(content)
+                        except PermissionError:
+                            # If permission denied, try with sudo on Unix-like systems
+                            if self.system != "Windows":
+                                print(f"Permission denied for {output_path}. Trying with sudo...")
+                                temp_rule_file = f"/tmp/heimdell_rule_{os.path.basename(rule_file)}"
+                                with open(temp_rule_file, 'wb') as out_file:
+                                    out_file.write(content)
+                                
+                                subprocess.run(["sudo", "cp", temp_rule_file, output_path], check=True)
+                                os.remove(temp_rule_file)
+                            else:
+                                raise
                             
                         print(f"Extracted: {os.path.basename(rule_file)}")
             
@@ -1066,6 +1326,8 @@ class SnortModule:
             ]
         }
         
+        success = True
+        
         # Write template files
         for filename, rules in templates.items():
             file_path = os.path.join(self.snort_rules_dir, filename)
@@ -1076,23 +1338,40 @@ class SnortModule:
                 continue
                 
             try:
-                with open(file_path, 'w') as f:
-                    for rule in rules:
-                        f.write(rule + '\n')
+                try:
+                    # Try normal write first
+                    with open(file_path, 'w') as f:
+                        for rule in rules:
+                            f.write(rule + '\n')
+                except PermissionError:
+                    # If permission denied, try with sudo on Unix-like systems
+                    if self.system != "Windows":
+                        print(f"Permission denied for {file_path}. Trying with sudo...")
+                        temp_rule_file = f"/tmp/heimdell_template_{filename}"
+                        with open(temp_rule_file, 'w') as f:
+                            for rule in rules:
+                                f.write(rule + '\n')
+                        
+                        subprocess.run(["sudo", "cp", temp_rule_file, file_path], check=True)
+                        os.remove(temp_rule_file)
+                    else:
+                        raise
                         
                 print(f"Created: {filename}")
             except Exception as e:
                 print(f"Error creating {filename}: {e}")
+                success = False
         
-        print("\n✓ Basic rule templates created successfully!")
+        if success:
+            print("\n✓ Basic rule templates created successfully!")
         
-        # Enable rule templates
-        for category in templates.keys():
-            category_name = os.path.splitext(category)[0]
-            if category_name in self.rule_templates:
-                self.rule_templates[category_name]['enabled'] = True
+            # Enable rule templates
+            for category in templates.keys():
+                category_name = os.path.splitext(category)[0]
+                if category_name in self.rule_templates:
+                    self.rule_templates[category_name]['enabled'] = True
         
-        return True
+        return success
     
     def _verify_and_apply_rules(self):
         """
@@ -1102,6 +1381,31 @@ class SnortModule:
             bool: True if successful, False otherwise
         """
         print("\nVerifying and applying rule changes...")
+        
+        # Check if Snort config file exists
+        if not os.path.exists(self.snort_conf):
+            print(f"Snort configuration file not found: {self.snort_conf}")
+            print("Would you like to search for the config file in other common locations?")
+            search = input("Heimdell(Search for config? [y/n]) #> ").strip().lower()
+            
+            if search == 'y':
+                common_locations = [
+                    "/etc/snort/snort.conf",
+                    "/usr/local/etc/snort/snort.conf",
+                    "/opt/snort/etc/snort.conf",
+                    "/usr/share/snort/snort.conf"
+                ]
+                
+                for location in common_locations:
+                    if os.path.exists(location):
+                        self.snort_conf = location
+                        print(f"Found Snort config at: {location}")
+                        break
+                else:
+                    print("Could not find Snort configuration file in common locations.")
+                    return False
+            else:
+                return False
         
         # Update snort.conf with enabled rule files
         if not self._update_config_with_rules():
@@ -1152,24 +1456,89 @@ class SnortModule:
             
         try:
             # Read the current config
-            with open(self.snort_conf, 'r') as f:
-                config_lines = f.readlines()
+            try:
+                with open(self.snort_conf, 'r') as f:
+                    config_lines = f.readlines()
+            except PermissionError:
+                # If permission denied, try with sudo on Unix-like systems
+                if self.system != "Windows":
+                    print(f"Permission denied for {self.snort_conf}. Trying with sudo...")
+                    result = subprocess.run(["sudo", "cat", self.snort_conf], 
+                                          stdout=subprocess.PIPE, 
+                                          stderr=subprocess.PIPE,
+                                          text=True,
+                                          check=True)
+                    config_lines = result.stdout.splitlines(True)  # keepends=True to keep newlines
+                else:
+                    raise
             
             # Find the rules section in the config
             rules_section_start = None
             rules_section_end = None
             
+            # Different formats of Snort config files may have different headers
+            # Look for common markers
+            rule_section_markers = [
+                "Step #5: Configure rule files",
+                "# Step #6: Configure output plugins",
+                "# Rule path location",
+                "# Rules and includes"
+            ]
+            
             for i, line in enumerate(config_lines):
-                if "Step #6: Configure output plugins" in line:
+                # Check for rule section start markers
+                if any(marker in line for marker in rule_section_markers[:2]):
+                    if rules_section_start is None:
+                        rules_section_start = i
+                
+                # Check for rule section end markers
+                if any(marker in line for marker in rule_section_markers[2:]) and rules_section_start is not None:
                     rules_section_end = i
                     break
-                    
-                if "Step #5: Configure rule files" in line:
-                    rules_section_start = i
+                
+                # Check for actual include lines to help determine section
+                if "include $RULE_PATH" in line or "include" in line and ".rules" in line:
+                    # Found a rule include line, set start to previous comment line if not set
+                    if rules_section_start is None:
+                        # Look backwards for a comment line
+                        for j in range(i-1, max(0, i-10), -1):
+                            if j >= 0 and config_lines[j].strip().startswith('#'):
+                                rules_section_start = j
+                                break
+                        if rules_section_start is None:
+                            rules_section_start = i  # Just use this line if no comment found
             
-            if rules_section_start is None or rules_section_end is None:
-                print("Could not locate rules section in Snort configuration file.")
-                return False
+            # If we didn't find explicit end marker, look for next section start
+            if rules_section_end is None and rules_section_start is not None:
+                for i in range(rules_section_start + 1, len(config_lines)):
+                    if config_lines[i].strip().startswith('#') and "Step" in config_lines[i]:
+                        rules_section_end = i
+                        break
+            
+            # If still not found, use reasonable defaults
+            if rules_section_start is None:
+                print("Could not locate rules section start in Snort configuration file.")
+                # Look for any existing includes
+                for i, line in enumerate(config_lines):
+                    if "include" in line and ".rules" in line:
+                        # Found a rule include line
+                        rules_section_start = i
+                        # Find next blank line or comment section
+                        for j in range(i+1, len(config_lines)):
+                            if not config_lines[j].strip() or (config_lines[j].strip().startswith('#') and "Step" in config_lines[j]):
+                                rules_section_end = j
+                                break
+                        if rules_section_end is not None:
+                            break
+                
+            # Last resort - add to the end of the file
+            if rules_section_start is None:
+                print("Could not find rule section. Will append to end of file.")
+                rules_section_start = len(config_lines)
+                rules_section_end = len(config_lines)
+            
+            if rules_section_end is None:
+                rules_section_end = rules_section_start + 1
             
             # Keep the config parts before and after the rules section
             config_before = config_lines[:rules_section_start + 1]
@@ -1177,6 +1546,12 @@ class SnortModule:
             
             # Generate new rules section
             new_rules_section = []
+            
+            # Add a header comment if we're creating a new section
+            if rules_section_start == len(config_lines):
+                new_rules_section.append("# Rule includes added by Heimdell\n")
+            
+            # Add enabled rules
             for category, template in self.rule_templates.items():
                 if template['enabled']:
                     rule_file = os.path.join(self.snort_rules_dir, template['filename'])
@@ -1188,8 +1563,24 @@ class SnortModule:
             new_config = config_before + new_rules_section + config_after
             
             # Write the new config
-            with open(self.snort_conf, 'w') as f:
-                f.writelines(new_config)
+            try:
+                # Try normal write first
+                with open(self.snort_conf, 'w') as f:
+                    f.writelines(new_config)
+            except PermissionError:
+                # If permission denied, try with sudo on Unix-like systems
+                if self.system != "Windows":
+                    print(f"Permission denied for {self.snort_conf}. Trying with sudo...")
+                    # Create a temporary file with the new config
+                    temp_config = "/tmp/heimdell_snort_config.tmp"
+                    with open(temp_config, 'w') as f:
+                        f.writelines(new_config)
+                    
+                    # Use sudo to copy the temp file to the original location
+                    subprocess.run(["sudo", "cp", temp_config, self.snort_conf], check=True)
+                    os.remove(temp_config)
+                else:
+                    raise
                 
             print("Snort configuration updated with enabled rule files.")
             return True
@@ -1209,9 +1600,11 @@ class SnortModule:
             choice = input("Heimdell(Stop Snort service? [y/n]) #> ").strip().lower()
             if choice == 'y':
                 print("Stopping Snort service...")
-                self._stop_snort()
-                if not self._is_snort_running():
-                    print("Snort service stopped successfully.")
+                if self._stop_snort():
+                    if not self._is_snort_running():
+                        print("Snort service stopped successfully.")
+                    else:
+                        print("Failed to stop Snort service.")
                 else:
                     print("Failed to stop Snort service.")
         else:
@@ -1236,6 +1629,20 @@ class SnortModule:
             bool: True if started successfully, False otherwise
         """
         try:
+            # Ensure log directory exists
+            if not os.path.exists(self.snort_log_dir):
+                try:
+                    os.makedirs(self.snort_log_dir, exist_ok=True)
+                    print(f"Created log directory: {self.snort_log_dir}")
+                except Exception as e:
+                    print(f"Error creating log directory: {e}")
+                    # Try with sudo
+                    if self.system != "Windows":
+                        try:
+                            subprocess.run(["sudo", "mkdir", "-p", self.snort_log_dir], check=True)
+                        except Exception:
+                            pass
+            
             # Build the command based on system
             if self.system == "Windows":
                 # Windows often needs to run as admin
@@ -1247,15 +1654,24 @@ class SnortModule:
                     "-l", self.snort_log_dir
                 ]
                 
-                # Use subprocess.DETACHED_PROCESS on Windows to run in background
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    creationflags=subprocess.DETACHED_PROCESS
-                )
+                # Use subprocess.CREATE_NEW_CONSOLE on Windows to run in new window
+                try:
+                    import subprocess
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        creationflags=subprocess.CREATE_NEW_CONSOLE
+                    )
+                except AttributeError:
+                    # Fallback if CREATE_NEW_CONSOLE not available
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                    )
             else:
-                # Unix-like systems can use nohup to run in background
+                # Unix-like systems can use sudo and nohup to run in background
                 cmd = [
                     "sudo", "nohup",
                     self.snort_bin,
@@ -1264,7 +1680,7 @@ class SnortModule:
                     "-D",  # Daemon mode
                     "-A", "fast",  # Fast alert output
                     "-l", self.snort_log_dir,
-                    "&"
+                    ">/dev/null", "2>&1", "&"
                 ]
                 
                 # For Unix, we need shell=True to use & at the end
@@ -1279,25 +1695,30 @@ class SnortModule:
             return False
     
     def _stop_snort(self):
-        """Stop the Snort process."""
-        if self.system == "Windows":
-            try:
+        """
+        Stop the Snort process.
+        
+        Returns:
+            bool: True if stopped successfully, False otherwise
+        """
+        try:
+            if self.system == "Windows":
                 subprocess.run(["taskkill", "/F", "/IM", "snort.exe"], 
                                stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE)
                 return True
-            except subprocess.CalledProcessError as e:
-                print(f"Error stopping Snort: {e}")
-                return False
-        else:
-            try:
+            else:
+                # Use sudo killall for Linux/macOS
                 subprocess.run(["sudo", "killall", "snort"], 
                                stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE)
                 return True
-            except subprocess.CalledProcessError as e:
-                print(f"Error stopping Snort: {e}")
-                return False
+        except subprocess.CalledProcessError as e:
+            print(f"Error stopping Snort: {e}")
+            return False
+        except Exception as e:
+            print(f"Error: {e}")
+            return False
     
     def _load_position(self):
         """Load the last position in the alert file that was read."""
@@ -1328,10 +1749,51 @@ class SnortModule:
         Args:
             live: Whether to monitor live (continuous) or just show recent alerts
         """
+        # Ensure the alert file exists
         if not os.path.exists(self.alert_file):
             print(f"Alert file not found: {self.alert_file}")
-            print("Make sure Snort is configured and has been run at least once.")
-            return
+            create_file = input("Heimdell(Create empty alert file? [y/n]) #> ").strip().lower()
+            
+            if create_file == 'y':
+                try:
+                    # Ensure directory exists
+                    os.makedirs(os.path.dirname(self.alert_file), exist_ok=True)
+                    
+                    # Create empty alert file
+                    with open(self.alert_file, 'w') as f:
+                        f.write("# Snort alert file created by Heimdell\n")
+                    
+                    print(f"Created empty alert file: {self.alert_file}")
+                except PermissionError:
+                    # Try with sudo
+                    if self.system != "Windows":
+                        try:
+                            # Ensure directory exists
+                            subprocess.run(["sudo", "mkdir", "-p", os.path.dirname(self.alert_file)], check=True)
+                            
+                            # Create empty file
+                            subprocess.run(["sudo", "touch", self.alert_file], check=True)
+                            
+                            # Add header
+                            subprocess.run(["sudo", "bash", "-c", f"echo '# Snort alert file created by Heimdell' > {self.alert_file}"], check=True)
+                            
+                            # Set permissions
+                            subprocess.run(["sudo", "chmod", "664", self.alert_file], check=True)
+                            
+                            print(f"Created empty alert file with sudo: {self.alert_file}")
+                        except Exception as e:
+                            print(f"Error creating alert file with sudo: {e}")
+                            return
+                    else:
+                        print(f"Permission denied to create alert file: {self.alert_file}")
+                        return
+                except Exception as e:
+                    print(f"Error creating alert file: {e}")
+                    return
+            else:
+                print("Alert monitoring requires an alert file.")
+                print("Make sure Snort is configured and has been run at least once.")
+                return
         
         print("\nSnort Alert Monitor")
         print("-" * 40)
