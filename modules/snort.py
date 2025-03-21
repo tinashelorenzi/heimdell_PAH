@@ -252,6 +252,7 @@ class SnortModule:
         """
         # Check if snort binary exists
         if os.path.exists(self.snort_bin):
+            print(f"Snort found installed at: {self.snort_bin}")
             try:
                 # Try to run snort -V to check version
                 result = subprocess.run([self.snort_bin, '-V'], 
@@ -259,6 +260,7 @@ class SnortModule:
                                        stderr=subprocess.PIPE,
                                        text=True,
                                        timeout=5)
+                print("Snort version:", result.stdout.strip())
                 if result.returncode == 0 and "Snort" in result.stdout:
                     return True
             except (subprocess.SubprocessError, FileNotFoundError):
